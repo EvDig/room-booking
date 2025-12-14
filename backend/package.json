@@ -9,7 +9,8 @@
     "start": "node dist/server.js",
     "db:generate": "prisma generate",
     "db:deploy": "prisma migrate deploy",
-    "test": "echo \"Tests passed!\" && exit 0"
+    "test": "echo \"Tests passed!\" && exit 0",
+    "seed": "tsx prisma/seed.ts"
   },
   "dependencies": {
     "fastify": "^5.0.0",
