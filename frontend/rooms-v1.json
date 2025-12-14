@@ -1,0 +1,2003 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "Room Booking API",
+    "version": "1.0.0",
+    "description": "REST API для каталога аудиторий и управления бронированиями.\nВ этой редакции **устранены** сущности корпусов/этажей.\nБазовый URL: `/api/v1`. Все даты/время — ISO-8601 с таймзоной.\n"
+  },
+  "servers": [
+    {
+      "url": "https://api.example.com/api/v1"
+    }
+  ],
+  "security": [
+    {
+      "bearerAuth": []
+    }
+  ],
+  "tags": [
+    {
+      "name": "Auth",
+      "description": "Authentication and user profile (login, logout, current user)."
+    },
+    {
+      "name": "Catalog",
+      "description": "Rooms and equipment catalog: search, CRUD, import/export."
+    },
+    {
+      "name": "Bookings",
+      "description": "Booking lifecycle: availability check and CRUD."
+    },
+    {
+      "name": "Operations",
+      "description": "Exports, activity stream, and health checks."
+    }
+  ],
+  "components": {
+    "securitySchemes": {
+      "bearerAuth": {
+        "type": "http",
+        "scheme": "bearer",
+        "bearerFormat": "JWT"
+      }
+    },
+    "schemas": {
+      "Problem": {
+        "type": "object",
+        "description": "RFC9457 Problem Details",
+        "properties": {
+          "type": {
+            "type": "string",
+            "format": "uri",
+            "example": "https://api.example.com/problems/not-found"
+          },
+          "title": {
+            "type": "string",
+            "example": "Not Found"
+          },
+          "status": {
+            "type": "integer",
+            "format": "int32",
+            "example": 404
+          },
+          "detail": {
+            "type": "string",
+            "example": "Resource not found"
+          },
+          "instance": {
+            "type": "string",
+            "example": "/rooms/201"
+          }
+        },
+        "required": [
+          "title",
+          "status"
+        ]
+      },
+      "EquipmentItem": {
+        "type": "object",
+        "properties": {
+          "key": {
+            "type": "string"
+          },
+          "label": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "key",
+          "label"
+        ]
+      },
+      "Room": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "code": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "capacity": {
+            "type": "integer"
+          },
+          "equipment": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "available",
+              "reserved",
+              "maintenance"
+            ]
+          },
+          "note": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "code",
+          "name",
+          "capacity",
+          "status"
+        ]
+      },
+      "RoomCreate": {
+        "type": "object",
+        "properties": {
+          "code": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "capacity": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "equipment": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "available",
+              "reserved",
+              "maintenance"
+            ]
+          },
+          "note": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "code",
+          "name",
+          "capacity",
+          "status"
+        ]
+      },
+      "RoomUpdate": {
+        "type": "object",
+        "description": "Частичное обновление аудитории",
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "capacity": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "equipment": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "available",
+              "reserved",
+              "maintenance"
+            ]
+          },
+          "note": {
+            "type": "string"
+          }
+        }
+      },
+      "Interval": {
+        "type": "object",
+        "properties": {
+          "start": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "end": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "start",
+          "end"
+        ]
+      },
+      "Repeat": {
+        "type": "object",
+        "properties": {
+          "freq": {
+            "type": "string",
+            "enum": [
+              "DAILY",
+              "WEEKLY",
+              "MONTHLY"
+            ]
+          },
+          "count": {
+            "type": "integer"
+          },
+          "until": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "byDay": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "Organizer": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "email": {
+            "type": "string",
+            "format": "email"
+          },
+          "phone": {
+            "type": "string"
+          },
+          "department": {
+            "type": "string"
+          }
+        }
+      },
+      "Participant": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "email": {
+            "type": "string",
+            "format": "email"
+          }
+        }
+      },
+      "Requirements": {
+        "type": "object",
+        "properties": {
+          "equipment": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "comment": {
+            "type": "string"
+          }
+        }
+      },
+      "Notifications": {
+        "type": "object",
+        "properties": {
+          "to_organizer": {
+            "type": "boolean"
+          },
+          "to_participants": {
+            "type": "boolean"
+          },
+          "channels": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": [
+                "email",
+                "telegram",
+                "sms"
+              ]
+            }
+          }
+        }
+      },
+      "Approval": {
+        "type": "object",
+        "properties": {
+          "mode": {
+            "type": "string",
+            "enum": [
+              "auto",
+              "manual"
+            ]
+          }
+        }
+      },
+      "Booking": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          },
+          "type": {
+            "type": "string"
+          },
+          "interval": {
+            "$ref": "#/components/schemas/Interval"
+          },
+          "prep_minutes_before": {
+            "type": "integer"
+          },
+          "prep_minutes_after": {
+            "type": "integer"
+          },
+          "repeat": {
+            "$ref": "#/components/schemas/Repeat"
+          },
+          "room_id": {
+            "type": "string"
+          },
+          "requirements": {
+            "$ref": "#/components/schemas/Requirements"
+          },
+          "organizer": {
+            "$ref": "#/components/schemas/Organizer"
+          },
+          "participants": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Participant"
+            }
+          },
+          "notifications": {
+            "$ref": "#/components/schemas/Notifications"
+          },
+          "approval": {
+            "$ref": "#/components/schemas/Approval"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "draft",
+              "pending",
+              "approved",
+              "rejected",
+              "cancelled",
+              "completed"
+            ]
+          }
+        },
+        "required": [
+          "id",
+          "title",
+          "interval",
+          "room_id",
+          "status"
+        ]
+      },
+      "BookingCreate": {
+        "type": "object",
+        "properties": {
+          "title": {
+            "type": "string"
+          },
+          "type": {
+            "type": "string"
+          },
+          "interval": {
+            "$ref": "#/components/schemas/Interval"
+          },
+          "prep_minutes_before": {
+            "type": "integer",
+            "default": 0
+          },
+          "prep_minutes_after": {
+            "type": "integer",
+            "default": 0
+          },
+          "repeat": {
+            "$ref": "#/components/schemas/Repeat"
+          },
+          "room_id": {
+            "type": "string"
+          },
+          "requirements": {
+            "$ref": "#/components/schemas/Requirements"
+          },
+          "organizer": {
+            "$ref": "#/components/schemas/Organizer"
+          },
+          "participants": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Participant"
+            }
+          },
+          "notifications": {
+            "$ref": "#/components/schemas/Notifications"
+          },
+          "approval": {
+            "$ref": "#/components/schemas/Approval"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "draft",
+              "pending"
+            ],
+            "default": "draft"
+          }
+        },
+        "required": [
+          "title",
+          "interval",
+          "room_id"
+        ]
+      },
+      "BookingUpdate": {
+        "type": "object",
+        "description": "Частичное обновление бронирования",
+        "properties": {
+          "title": {
+            "type": "string"
+          },
+          "type": {
+            "type": "string"
+          },
+          "interval": {
+            "$ref": "#/components/schemas/Interval"
+          },
+          "repeat": {
+            "$ref": "#/components/schemas/Repeat"
+          },
+          "room_id": {
+            "type": "string"
+          },
+          "requirements": {
+            "$ref": "#/components/schemas/Requirements"
+          },
+          "organizer": {
+            "$ref": "#/components/schemas/Organizer"
+          },
+          "participants": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Participant"
+            }
+          },
+          "notifications": {
+            "$ref": "#/components/schemas/Notifications"
+          },
+          "approval": {
+            "$ref": "#/components/schemas/Approval"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "draft",
+              "pending",
+              "approved",
+              "rejected",
+              "cancelled"
+            ]
+          }
+        }
+      },
+      "AvailabilityCheckRequest": {
+        "type": "object",
+        "properties": {
+          "interval": {
+            "$ref": "#/components/schemas/Interval"
+          },
+          "capacity_min": {
+            "type": "integer"
+          },
+          "equipment": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "prep_minutes_before": {
+            "type": "integer",
+            "default": 0
+          },
+          "prep_minutes_after": {
+            "type": "integer",
+            "default": 0
+          }
+        },
+        "required": [
+          "interval"
+        ]
+      },
+      "AvailabilityCheckResponse": {
+        "type": "object",
+        "properties": {
+          "available": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "room_id": {
+                  "type": "string"
+                },
+                "score": {
+                  "type": "number"
+                }
+              }
+            }
+          },
+          "conflicts": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "room_id": {
+                  "type": "string"
+                },
+                "booking_id": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "responses": {
+      "UnauthorizedError": {
+        "description": "Unauthorized",
+        "content": {
+          "application/problem+json": {
+            "schema": {
+              "$ref": "#/components/schemas/Problem"
+            },
+            "examples": {
+              "unauthorized": {
+                "value": {
+                  "type": "https://api.example.com/problems/unauthorized",
+                  "title": "Unauthorized",
+                  "status": 401,
+                  "detail": "Missing or invalid token",
+                  "instance": "/me"
+                }
+              }
+            }
+          }
+        }
+      },
+      "NotFoundError": {
+        "description": "Not Found",
+        "content": {
+          "application/problem+json": {
+            "schema": {
+              "$ref": "#/components/schemas/Problem"
+            },
+            "examples": {
+              "notFound": {
+                "value": {
+                  "type": "https://api.example.com/problems/not-found",
+                  "title": "Not Found",
+                  "status": 404,
+                  "detail": "Resource not found",
+                  "instance": "/rooms/201"
+                }
+              }
+            }
+          }
+        }
+      },
+      "ConflictError": {
+        "description": "Conflict",
+        "content": {
+          "application/problem+json": {
+            "schema": {
+              "$ref": "#/components/schemas/Problem"
+            },
+            "examples": {
+              "conflict": {
+                "value": {
+                  "type": "https://api.example.com/problems/conflict",
+                  "title": "Conflict",
+                  "status": 409,
+                  "detail": "Time slot overlaps existing booking",
+                  "instance": "/bookings"
+                }
+              }
+            }
+          }
+        }
+      },
+      "ValidationError": {
+        "description": "Unprocessable Content",
+        "content": {
+          "application/problem+json": {
+            "schema": {
+              "$ref": "#/components/schemas/Problem"
+            },
+            "examples": {
+              "validation": {
+                "value": {
+                  "type": "https://api.example.com/problems/validation",
+                  "title": "Unprocessable Content",
+                  "status": 422,
+                  "detail": "Validation failed",
+                  "instance": "/rooms"
+                }
+              }
+            }
+          }
+        }
+      },
+      "ForbiddenError": {
+        "description": "Forbidden",
+        "content": {
+          "application/problem+json": {
+            "schema": {
+              "$ref": "#/components/schemas/Problem"
+            },
+            "examples": {
+              "forbidden": {
+                "value": {
+                  "type": "https://api.example.com/problems/forbidden",
+                  "title": "Forbidden",
+                  "status": 403,
+                  "detail": "Insufficient privileges",
+                  "instance": "/"
+                }
+              }
+            }
+          }
+        }
+      },
+      "ServerError": {
+        "description": "Unexpected error",
+        "content": {
+          "application/problem+json": {
+            "schema": {
+              "$ref": "#/components/schemas/Problem"
+            },
+            "examples": {
+              "serverError": {
+                "value": {
+                  "type": "https://api.example.com/problems/server-error",
+                  "title": "Internal Server Error",
+                  "status": 500,
+                  "detail": "Unhandled exception",
+                  "instance": "/"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "parameters": {
+      "Page": {
+        "name": "page",
+        "in": "query",
+        "description": "Номер страницы (1-based).",
+        "required": false,
+        "schema": {
+          "type": "integer",
+          "minimum": 1,
+          "default": 1
+        }
+      },
+      "PageSize": {
+        "name": "page_size",
+        "in": "query",
+        "description": "Размер страницы выборки.",
+        "required": false,
+        "schema": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 200,
+          "default": 25
+        }
+      },
+      "SearchQuery": {
+        "name": "q",
+        "in": "query",
+        "description": "Поиск по номеру/названию.",
+        "required": false,
+        "schema": {
+          "type": "string"
+        }
+      },
+      "RoomStatus": {
+        "name": "status",
+        "in": "query",
+        "description": "Статус аудитории.",
+        "required": false,
+        "schema": {
+          "type": "string",
+          "enum": [
+            "available",
+            "reserved",
+            "maintenance"
+          ]
+        }
+      },
+      "CapacityMin": {
+        "name": "capacity_min",
+        "in": "query",
+        "description": "Вместимость — нижняя граница.",
+        "required": false,
+        "schema": {
+          "type": "integer",
+          "minimum": 0
+        }
+      },
+      "CapacityMax": {
+        "name": "capacity_max",
+        "in": "query",
+        "description": "Вместимость — верхняя граница.",
+        "required": false,
+        "schema": {
+          "type": "integer",
+          "minimum": 0
+        }
+      },
+      "Equipment": {
+        "name": "equipment",
+        "in": "query",
+        "description": "Фильтр по тегам оборудования. Множественные значения: `?equipment=wifi&equipment=projector` (style=form, explode=true).",
+        "required": false,
+        "style": "form",
+        "explode": true,
+        "schema": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      },
+      "DateFrom": {
+        "name": "date_from",
+        "in": "query",
+        "description": "Начало интервала (ISO-8601, date-time).",
+        "required": false,
+        "schema": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "DateTo": {
+        "name": "date_to",
+        "in": "query",
+        "description": "Конец интервала (ISO-8601, date-time).",
+        "required": false,
+        "schema": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "ExportDateFrom": {
+        "name": "date_from",
+        "in": "query",
+        "description": "Период «с» для экспорта (ISO-8601, date).",
+        "required": true,
+        "schema": {
+          "type": "string",
+          "format": "date"
+        }
+      },
+      "ExportDateTo": {
+        "name": "date_to",
+        "in": "query",
+        "description": "Период «по» для экспорта (ISO-8601, date).",
+        "required": true,
+        "schema": {
+          "type": "string",
+          "format": "date"
+        }
+      },
+      "RoomIdQuery": {
+        "name": "room_id",
+        "in": "query",
+        "description": "Фильтр по ID аудитории.",
+        "required": false,
+        "schema": {
+          "type": "string"
+        }
+      },
+      "OrganizerQuery": {
+        "name": "organizer_q",
+        "in": "query",
+        "description": "Фильтр по организатору (ФИО/почта).",
+        "required": false,
+        "schema": {
+          "type": "string"
+        }
+      },
+      "BookingStatusQuery": {
+        "name": "status",
+        "in": "query",
+        "description": "Статус бронирования.",
+        "required": false,
+        "schema": {
+          "type": "string",
+          "enum": [
+            "pending",
+            "approved",
+            "cancelled",
+            "draft",
+            "rejected"
+          ]
+        }
+      },
+      "Limit": {
+        "name": "limit",
+        "in": "query",
+        "description": "Количество элементов (для ленты активности).",
+        "required": false,
+        "schema": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 100,
+          "default": 20
+        }
+      },
+      "FormatExport": {
+        "name": "format",
+        "in": "query",
+        "description": "Формат экспорта.",
+        "required": false,
+        "schema": {
+          "type": "string",
+          "enum": [
+            "csv",
+            "xlsx",
+            "pdf"
+          ],
+          "default": "csv"
+        }
+      },
+      "GroupBy": {
+        "name": "group_by",
+        "in": "query",
+        "description": "Группировка в отчёте.",
+        "required": false,
+        "schema": {
+          "type": "string",
+          "enum": [
+            "room",
+            "day",
+            "organizer"
+          ]
+        }
+      }
+    }
+  },
+  "paths": {
+    "/auth/login": {
+      "post": {
+        "tags": [
+          "Auth"
+        ],
+        "summary": "Вход пользователя",
+        "description": "Возвращает токен доступа. Используйте его в `Authorization: Bearer <token>` для защищённых запросов.",
+        "operationId": "login",
+        "security": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "email",
+                  "password"
+                ],
+                "properties": {
+                  "email": {
+                    "type": "string",
+                    "format": "email"
+                  },
+                  "password": {
+                    "type": "string",
+                    "minLength": 1
+                  }
+                }
+              },
+              "example": {
+                "email": "user@example.com",
+                "password": "secret"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Аутентификация успешна",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "access_token": {
+                      "type": "string"
+                    },
+                    "expires_in": {
+                      "type": "integer"
+                    }
+                  }
+                },
+                "example": {
+                  "access_token": "eyJhbGciOi...",
+                  "expires_in": 3600
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/UnauthorizedError"
+          },
+          "default": {
+            "$ref": "#/components/responses/ServerError"
+          }
+        }
+      }
+    },
+    "/auth/logout": {
+      "post": {
+        "tags": [
+          "Auth"
+        ],
+        "summary": "Выход (инвалидация токена)",
+        "description": "Инвалидирует активный токен доступа.",
+        "operationId": "logout",
+        "responses": {
+          "204": {
+            "description": "Выход выполнен"
+          },
+          "401": {
+            "$ref": "#/components/responses/UnauthorizedError"
+          },
+          "default": {
+            "$ref": "#/components/responses/ServerError"
+          }
+        }
+      }
+    },
+    "/me": {
+      "get": {
+        "tags": [
+          "Auth"
+        ],
+        "summary": "Текущий пользователь",
+        "description": "Возвращает профиль и роли текущего пользователя.",
+        "operationId": "getCurrentUser",
+        "responses": {
+          "200": {
+            "description": "Профиль пользователя",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "string"
+                    },
+                    "name": {
+                      "type": "string"
+                    },
+                    "email": {
+                      "type": "string",
+                      "format": "email"
+                    },
+                    "roles": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    }
+                  }
+                },
+                "example": {
+                  "id": "u1",
+                  "name": "Администратор",
+                  "email": "admin@example.com",
+                  "roles": [
+                    "admin"
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/UnauthorizedError"
+          },
+          "default": {
+            "$ref": "#/components/responses/ServerError"
+          }
+        }
+      }
+    },
+    "/equipment": {
+      "get": {
+        "tags": [
+          "Catalog"
+        ],
+        "summary": "Справочник оборудования",
+        "description": "Список допустимых тегов оборудования, используемых для фильтрации и требований.",
+        "operationId": "listEquipment",
+        "responses": {
+          "200": {
+            "description": "Список тегов",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/EquipmentItem"
+                  }
+                },
+                "example": [
+                  {
+                    "key": "projector",
+                    "label": "Проектор"
+                  },
+                  {
+                    "key": "wifi",
+                    "label": "Wi-Fi"
+                  }
+                ]
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/UnauthorizedError"
+          },
+          "default": {
+            "$ref": "#/components/responses/ServerError"
+          }
+        }
+      }
+    },
+    "/rooms": {
+      "get": {
+        "tags": [
+          "Catalog"
+        ],
+        "summary": "Список аудиторий",
+        "description": "Возвращает страницы аудиторий с фильтрами. Для множественных тегов оборудования используйте повторяющиеся параметры `equipment` (style=form, explode=true).",
+        "operationId": "listRooms",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/SearchQuery"
+          },
+          {
+            "$ref": "#/components/parameters/RoomStatus"
+          },
+          {
+            "$ref": "#/components/parameters/CapacityMin"
+          },
+          {
+            "$ref": "#/components/parameters/CapacityMax"
+          },
+          {
+            "$ref": "#/components/parameters/Equipment"
+          },
+          {
+            "$ref": "#/components/parameters/Page"
+          },
+          {
+            "$ref": "#/components/parameters/PageSize"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Страница аудиторий",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "items": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/Room"
+                      }
+                    },
+                    "page": {
+                      "type": "integer"
+                    },
+                    "total": {
+                      "type": "integer"
+                    }
+                  }
+                },
+                "example": {
+                  "items": [
+                    {
+                      "id": "201",
+                      "code": "201",
+                      "name": "Конференц-зал",
+                      "capacity": 50,
+                      "equipment": [
+                        "projector",
+                        "microphone"
+                      ],
+                      "status": "available"
+                    }
+                  ],
+                  "page": 1,
+                  "total": 156
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/UnauthorizedError"
+          },
+          "403": {
+            "$ref": "#/components/responses/ForbiddenError"
+          },
+          "default": {
+            "$ref": "#/components/responses/ServerError"
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "Catalog"
+        ],
+        "summary": "Создать аудиторию",
+        "description": "Добавляет новую аудиторию. `code` должен быть уникален.",
+        "operationId": "createRoom",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RoomCreate"
+              },
+              "example": {
+                "code": "203",
+                "name": "Семинарская",
+                "capacity": 25,
+                "equipment": [
+                  "whiteboard",
+                  "wifi"
+                ],
+                "status": "available"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Создано",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "string"
+                    },
+                    "created": {
+                      "type": "boolean"
+                    }
+                  }
+                },
+                "example": {
+                  "id": "203",
+                  "created": true
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Некорректный запрос",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/UnauthorizedError"
+          },
+          "422": {
+            "$ref": "#/components/responses/ValidationError"
+          },
+          "default": {
+            "$ref": "#/components/responses/ServerError"
+          }
+        }
+      }
+    },
+    "/rooms/{id}": {
+      "get": {
+        "tags": [
+          "Catalog"
+        ],
+        "summary": "Получить аудиторию",
+        "description": "Возвращает карточку аудитории по ID.",
+        "operationId": "getRoomById",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "ID аудитории"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Карточка аудитории",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Room"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/UnauthorizedError"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFoundError"
+          },
+          "default": {
+            "$ref": "#/components/responses/ServerError"
+          }
+        }
+      },
+      "patch": {
+        "tags": [
+          "Catalog"
+        ],
+        "summary": "Изменить аудиторию",
+        "description": "Частичное обновление полей аудитории.",
+        "operationId": "updateRoom",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "ID аудитории"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RoomUpdate"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Обновлено",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "updated": {
+                      "type": "boolean"
+                    }
+                  }
+                },
+                "example": {
+                  "updated": true
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/UnauthorizedError"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFoundError"
+          },
+          "422": {
+            "$ref": "#/components/responses/ValidationError"
+          },
+          "default": {
+            "$ref": "#/components/responses/ServerError"
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "Catalog"
+        ],
+        "summary": "Удалить аудиторию",
+        "description": "Удаляет аудиторию по ID.",
+        "operationId": "deleteRoom",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "ID аудитории"
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Удалено"
+          },
+          "401": {
+            "$ref": "#/components/responses/UnauthorizedError"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFoundError"
+          },
+          "default": {
+            "$ref": "#/components/responses/ServerError"
+          }
+        }
+      }
+    },
+    "/rooms/export": {
+      "get": {
+        "tags": [
+          "Catalog"
+        ],
+        "summary": "Экспорт каталога аудиторий",
+        "description": "Возвращает каталог в указанном формате (`json`, `csv`, `xlsx`).",
+        "operationId": "exportRooms",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/FormatExport"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Экспорт успешно сформирован",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/Room"
+                  }
+                }
+              },
+              "text/csv": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary"
+                }
+              },
+              "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/UnauthorizedError"
+          },
+          "default": {
+            "$ref": "#/components/responses/ServerError"
+          }
+        }
+      }
+    },
+    "/rooms/import": {
+      "post": {
+        "tags": [
+          "Catalog"
+        ],
+        "summary": "Импорт каталога аудиторий",
+        "description": "Режимы: `upsert` (добавить/обновить) или `replace` (полная замена).",
+        "operationId": "importRooms",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "mode",
+                  "items"
+                ],
+                "properties": {
+                  "mode": {
+                    "type": "string",
+                    "enum": [
+                      "upsert",
+                      "replace"
+                    ]
+                  },
+                  "items": {
+                    "type": "array",
+                    "items": {
+                      "$ref": "#/components/schemas/RoomCreate"
+                    }
+                  }
+                }
+              },
+              "example": {
+                "mode": "upsert",
+                "items": [
+                  {
+                    "code": "101",
+                    "name": "Лекция 1",
+                    "capacity": 120,
+                    "equipment": [
+                      "projector",
+                      "wifi"
+                    ]
+                  }
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Результаты импорта",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "created": {
+                      "type": "integer"
+                    },
+                    "updated": {
+                      "type": "integer"
+                    },
+                    "skipped": {
+                      "type": "integer"
+                    }
+                  }
+                },
+                "example": {
+                  "created": 1,
+                  "updated": 0,
+                  "skipped": 0
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Некорректный JSON",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/UnauthorizedError"
+          },
+          "422": {
+            "$ref": "#/components/responses/ValidationError"
+          },
+          "default": {
+            "$ref": "#/components/responses/ServerError"
+          }
+        }
+      }
+    },
+    "/availability/check": {
+      "post": {
+        "tags": [
+          "Bookings"
+        ],
+        "summary": "Проверка доступности аудиторий",
+        "description": "Проверяет конфликты и подбирает доступные аудитории под указанный интервал и требования.",
+        "operationId": "checkAvailability",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AvailabilityCheckRequest"
+              },
+              "example": {
+                "interval": {
+                  "start": "2024-12-03T10:00:00+03:00",
+                  "end": "2024-12-03T12:00:00+03:00"
+                },
+                "capacity_min": 20,
+                "equipment": [
+                  "projector",
+                  "microphone"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Результат подбора",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AvailabilityCheckResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/UnauthorizedError"
+          },
+          "422": {
+            "$ref": "#/components/responses/ValidationError"
+          },
+          "default": {
+            "$ref": "#/components/responses/ServerError"
+          }
+        }
+      }
+    },
+    "/bookings": {
+      "get": {
+        "tags": [
+          "Bookings"
+        ],
+        "summary": "Список бронирований",
+        "description": "Возвращает страницы бронирований с фильтрами по интервалу, аудитории, организатору и статусу.",
+        "operationId": "listBookings",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/DateFrom"
+          },
+          {
+            "$ref": "#/components/parameters/DateTo"
+          },
+          {
+            "$ref": "#/components/parameters/RoomIdQuery"
+          },
+          {
+            "$ref": "#/components/parameters/OrganizerQuery"
+          },
+          {
+            "$ref": "#/components/parameters/BookingStatusQuery"
+          },
+          {
+            "$ref": "#/components/parameters/Page"
+          },
+          {
+            "$ref": "#/components/parameters/PageSize"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Страница бронирований",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "items": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/Booking"
+                      }
+                    },
+                    "page": {
+                      "type": "integer"
+                    },
+                    "total": {
+                      "type": "integer"
+                    }
+                  }
+                },
+                "example": {
+                  "items": [
+                    {
+                      "id": "B-1",
+                      "title": "Лекция",
+                      "room_id": "201",
+                      "interval": {
+                        "start": "2024-12-03T10:00:00+03:00",
+                        "end": "2024-12-03T12:00:00+03:00"
+                      },
+                      "status": "approved"
+                    }
+                  ],
+                  "page": 1,
+                  "total": 127
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/UnauthorizedError"
+          },
+          "default": {
+            "$ref": "#/components/responses/ServerError"
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "Bookings"
+        ],
+        "summary": "Создать бронирование",
+        "description": "Создаёт бронирование или черновик. При пересечении интервала возвращает конфликт.",
+        "operationId": "createBooking",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BookingCreate"
+              },
+              "example": {
+                "title": "Лекция по ML",
+                "interval": {
+                  "start": "2024-12-03T10:00:00+03:00",
+                  "end": "2024-12-03T12:00:00+03:00"
+                },
+                "room_id": "201",
+                "requirements": {
+                  "equipment": [
+                    "projector"
+                  ]
+                },
+                "status": "draft"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Создано",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "string"
+                    },
+                    "status": {
+                      "type": "string",
+                      "enum": [
+                        "pending",
+                        "draft"
+                      ]
+                    }
+                  }
+                },
+                "example": {
+                  "id": "B-20241203-001",
+                  "status": "pending"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/UnauthorizedError"
+          },
+          "409": {
+            "$ref": "#/components/responses/ConflictError"
+          },
+          "422": {
+            "$ref": "#/components/responses/ValidationError"
+          },
+          "default": {
+            "$ref": "#/components/responses/ServerError"
+          }
+        }
+      }
+    },
+    "/bookings/{id}": {
+      "get": {
+        "tags": [
+          "Bookings"
+        ],
+        "summary": "Получить бронирование",
+        "description": "Возвращает полную карточку бронирования по ID.",
+        "operationId": "getBookingById",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "ID бронирования"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Карточка бронирования",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Booking"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/UnauthorizedError"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFoundError"
+          },
+          "default": {
+            "$ref": "#/components/responses/ServerError"
+          }
+        }
+      },
+      "patch": {
+        "tags": [
+          "Bookings"
+        ],
+        "summary": "Изменить бронирование",
+        "description": "Частичное обновление полей бронирования (перенос времени, замена аудитории и т.д.).",
+        "operationId": "updateBooking",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "ID бронирования"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BookingUpdate"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Обновлено",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "updated": {
+                      "type": "boolean"
+                    }
+                  }
+                },
+                "example": {
+                  "updated": true
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/UnauthorizedError"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFoundError"
+          },
+          "409": {
+            "$ref": "#/components/responses/ConflictError"
+          },
+          "422": {
+            "$ref": "#/components/responses/ValidationError"
+          },
+          "default": {
+            "$ref": "#/components/responses/ServerError"
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "Bookings"
+        ],
+        "summary": "Удалить бронирование",
+        "description": "Отменяет (удаляет) бронирование.",
+        "operationId": "deleteBooking",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "ID бронирования"
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Удалено"
+          },
+          "401": {
+            "$ref": "#/components/responses/UnauthorizedError"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFoundError"
+          },
+          "default": {
+            "$ref": "#/components/responses/ServerError"
+          }
+        }
+      }
+    },
+    "/exports/bookings": {
+      "get": {
+        "tags": [
+          "Operations"
+        ],
+        "summary": "Экспорт бронирований",
+        "description": "Формирует отчёт за период в формате `csv`/`xlsx`/`pdf` с опциональной группировкой.",
+        "operationId": "exportBookings",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/ExportDateFrom"
+          },
+          {
+            "$ref": "#/components/parameters/ExportDateTo"
+          },
+          {
+            "$ref": "#/components/parameters/FormatExport"
+          },
+          {
+            "$ref": "#/components/parameters/GroupBy"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Готовый файл/поток",
+            "content": {
+              "text/csv": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary"
+                }
+              },
+              "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary"
+                }
+              },
+              "application/pdf": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/UnauthorizedError"
+          },
+          "default": {
+            "$ref": "#/components/responses/ServerError"
+          }
+        }
+      }
+    },
+    "/activity": {
+      "get": {
+        "tags": [
+          "Operations"
+        ],
+        "summary": "Лента изменений",
+        "description": "Аудит-лог последних операций.",
+        "operationId": "listActivity",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/Limit"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Последние события",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "ts": {
+                        "type": "string",
+                        "format": "date-time"
+                      },
+                      "actor": {
+                        "type": "string"
+                      },
+                      "action": {
+                        "type": "string"
+                      },
+                      "target_id": {
+                        "type": "string"
+                      }
+                    }
+                  }
+                },
+                "example": [
+                  {
+                    "ts": "2024-12-03T09:01:00+03:00",
+                    "actor": "admin",
+                    "action": "booking.create",
+                    "target_id": "B-20241203-001"
+                  }
+                ]
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/UnauthorizedError"
+          },
+          "default": {
+            "$ref": "#/components/responses/ServerError"
+          }
+        }
+      }
+    },
+    "/healthz": {
+      "get": {
+        "tags": [
+          "Operations"
+        ],
+        "summary": "Проверка работоспособности",
+        "description": "Быстрый health-check сервиса.",
+        "operationId": "healthz",
+        "responses": {
+          "200": {
+            "description": "Сервис доступен",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "string"
+                    },
+                    "ts": {
+                      "type": "string",
+                      "format": "date-time"
+                    }
+                  }
+                },
+                "example": {
+                  "status": "ok",
+                  "ts": "2025-01-01T12:00:00Z"
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,37 @@
+generator client {
+  provider = "prisma-client-js"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id        String   @id @default(cuid())
+  email     String   @unique
+  name      String?
+  createdAt DateTime @default(now())
+}
+
+enum RoomStatus {
+  available   
+  reserved     
+  maintenance  
+}
+
+model Room {
+  id        String     @id @default(uuid())
+  code      String     @unique              
+  name      String                          
+  capacity  Int                             
+  equipment String[]                        
+  
+  status    RoomStatus @default(available)
+  
+  note      String?                         
+
+  createdAt DateTime   @default(now())
+  updatedAt DateTime   @updatedAt
+}
