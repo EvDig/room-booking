@@ -43,6 +43,8 @@ jobs:
 
       - name: Build
         run: npm run build -- --base=/room-booking/
+        env:
+          VITE_API_URL: https://room-booking-api-1iv0.onrender.com/api
 
       - name: Upload artifact for Pages
         uses: actions/upload-pages-artifact@v3
