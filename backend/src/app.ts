@@ -296,7 +296,11 @@ export async function buildApp() {
       }
     });
 
-    return reply.code(201).send(newBooking);
+    return reply.code(201).send({
+      ...newBooking,
+      start: newBooking.start.toISOString(),
+      end: newBooking.end.toISOString()
+    });
   })
 
   app.delete('/api/bookings/:id', {

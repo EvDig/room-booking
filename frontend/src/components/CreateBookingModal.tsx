@@ -26,7 +26,7 @@ export const CreateBookingModal: React.FC<Props> = ({ open, onClose, onSubmit })
 
   useEffect(() => {
     if (open) {
-      fetchRooms(1).then(data => setRooms(data.items));
+      fetchRooms({ page: 1 }).then(data => setRooms(data.items));
       // Сброс формы
       setTitle('');
       setRoomId('');

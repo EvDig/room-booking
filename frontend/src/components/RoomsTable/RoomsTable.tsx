@@ -27,7 +27,7 @@ const STATUS_COLOR: Record<string, "success" | "warning" | "default"> = {
 };
 
 // Конфигурация оборудования: Ключ -> { Название, Иконка }
-const EQUIPMENT_MAP: Record<string, { label: string; icon: React.elementType }> = {
+const EQUIPMENT_MAP: Record<string, { label: string; icon: React.ElementType }> = {
   projector: { label: "Проектор", icon: ProjectorIcon },
   microphone: { label: "Микрофон", icon: MicIcon },
   wifi: { label: "Wi-Fi", icon: WifiIcon },

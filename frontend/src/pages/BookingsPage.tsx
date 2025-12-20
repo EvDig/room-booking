@@ -78,7 +78,7 @@ const BookingsPage: React.FC = () => {
             ) : (
               bookings.map((b) => (
                 <TableRow key={b.id} hover>
-                  <TableCell fontWeight={500}>{b.title}</TableCell>
+                  <TableCell sx={{ fontWeight: 500 }}>{b.title}</TableCell>
                   <TableCell>
                     <Chip
                       icon={<EventIcon fontSize="small" />}
