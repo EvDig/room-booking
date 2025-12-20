@@ -5,6 +5,7 @@ import CssBaseline from '@mui/material/CssBaseline';
 // Импортируем Header из папки (подхватит index.ts)
 import { Header } from './components/Header';
 import RoomCatalogPage from './pages/RoomCatalogPage';
+import BookingsPage from './pages/BookingsPage';
 
 import './App.css';
 
@@ -45,15 +46,7 @@ function App() {
 
         {/* Заглушка для других страниц, чтобы было видно переключение */}
         {activeTab === 'bookings' && (
-          <div style={{ padding: 40, textAlign: 'center' }}>
-            <h2>Здесь будет управление бронированием</h2>
-          </div>
-        )}
-
-        {activeTab === 'settings' && (
-          <div style={{ padding: 40, textAlign: 'center' }}>
-            <h2>Здесь будут настройки</h2>
-          </div>
+          <BookingsPage />
         )}
       </main>
     </ThemeProvider>

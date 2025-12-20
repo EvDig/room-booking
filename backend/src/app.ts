@@ -9,16 +9,13 @@ import { Type as T } from '@sinclair/typebox'
 import type { TypeBoxTypeProvider } from '@fastify/type-provider-typebox'
 import { ValidationProblem, ProblemDetails, User, Health } from './types.js'
 
-// --- НОВЫЕ СХЕМЫ (ROOMS) ---
-
-// Enum статусов (для документации и валидации)
+// --- DTO: ROOMS ---
 const RoomStatus = T.Union([
   T.Literal('available'),
   T.Literal('reserved'),
   T.Literal('maintenance')
 ])
 
-// Модель Аудитории (DTO), которую отдаем на фронт
 const Room = T.Object({
   id: T.String(),
   code: T.String(),
@@ -29,11 +26,38 @@ const Room = T.Object({
   note: T.Optional(T.String())
 })
 
-// Ответ c пагинацией (как в нашем roomsApi.ts на фронте)
 const RoomsResponse = T.Object({
   items: T.Array(Room),
   total: T.Integer(),
   page: T.Integer()
+})
+
+// --- DTO: BOOKINGS ---
+const Booking = T.Object({
+  id: T.String(),
+  title: T.String(),
+  start: T.String({ format: 'date-time' }),
+  end: T.String({ format: 'date-time' }),
+  roomId: T.String(),
+  room: T.Optional(T.Object({
+    code: T.String(),
+    name: T.String()
+  }))
+})
+
+const CreateBookingRequest = T.Object({
+  title: T.String(),
+  start: T.String({ format: 'date-time' }),
+  end: T.String({ format: 'date-time' }),
+  roomId: T.String()
+})
+
+// --- DTO: STATISTICS ---
+const StatisticsResponse = T.Object({
+  totalRooms: T.Integer(),
+  activeBookings: T.Integer(),
+  availableRooms: T.Integer(),
+  totalEquipment: T.Integer()
 })
 
 
@@ -48,26 +72,19 @@ export async function buildApp() {
   }).withTypeProvider<TypeBoxTypeProvider>()
 
   await app.register(helmet)
-  // Включаем CORS, чтобы фронтенд мог стучаться к нам (даже через Nginx полезно, плюс для локальной отладки)
   await app.register(cors, { origin: true })
 
   await app.register(rateLimit, {
     max: 100,
     timeWindow: '1 minute',
     enableDraftSpec: true,
-    addHeaders: {
-      'x-ratelimit-limit': true,
-      'x-ratelimit-remaining': true,
-      'x-ratelimit-reset': true,
-      'retry-after': true
-    },
     errorResponseBuilder(request, ctx) {
       const seconds = Math.ceil(ctx.ttl / 1000)
       return {
         type: 'about:blank',
         title: 'Too Many Requests',
         status: 429,
-        detail: `Rate limit exceeded. Retry in ${seconds} seconds.`,
+        detail: `Retry in ${seconds} s.`,
         instance: request.url
       } satisfies ProblemDetails
     }
@@ -76,66 +93,43 @@ export async function buildApp() {
   await app.register(swagger, {
     openapi: {
       openapi: '3.0.3',
-      info: {
-        title: 'Rooms API',
-        version: '1.0.0',
-        description: 'HTTP-API'
-      },
+      info: { title: 'Rooms API', version: '1.0.0' },
       servers: [{ url: 'http://localhost' }],
       tags: [
-        { name: 'Rooms', description: 'Room catalog operations' }, // <-- Добавили тег
-        { name: 'Users', description: 'User management' },
-        { name: 'System', description: 'System endpoints' }
+        { name: 'Rooms', description: 'Catalog' },
+        { name: 'Bookings', description: 'Reservations' },
+        { name: 'Stats', description: 'Dashboard stats' }
       ]
     }
   })
 
   await app.register(prismaPlugin)
 
-  // Error Handler
   app.setErrorHandler<FastifyError | ValidationProblem>((err, req, reply) => {
     const status = typeof err.statusCode === 'number' ? err.statusCode : 500
-    const isValidation = err instanceof ValidationProblem
+    if (status >= 500) req.log.error(err)
 
-    // Логируем ошибку, если это не обычная валидация
-    if (status >= 500) {
-      req.log.error(err)
-    }
-
-    const problem = {
+    reply.code(status).type('application/problem+json').send({
       type: 'about:blank',
       title: STATUS_CODES[status] ?? 'Error',
       status,
-      detail: err.message || 'Unexpected error',
-      instance: req.url,
-      ...(isValidation ? { errorsText: err.message } : {})
-    }
-
-    reply.code(status).type('application/problem+json').send(problem)
+      detail: err.message || 'Error',
+      instance: req.url
+    })
   })
 
-  app.setNotFoundHandler((request, reply) => {
-    reply.code(404).type('application/problem+json').send({
-      type: 'about:blank',
-      title: 'Not Found',
-      status: 404,
-      detail: `Route ${request.method} ${request.url} not found`,
-      instance: request.url
-    } satisfies ProblemDetails)
+  app.setNotFoundHandler((req, reply) => {
+    reply.code(404).send({ status: 404, title: 'Not Found', type: 'about:blank' })
   })
 
-  // --- МАРШРУТЫ (ROUTES) ---
-
-  // 1. GET /api/rooms - Получить список аудиторий
   app.get('/api/rooms', {
     schema: {
-      operationId: 'listRooms',
       tags: ['Rooms'],
-      summary: 'Get list of rooms',
-      // Описываем query-параметры (например, страница)
       querystring: T.Object({
         page: T.Optional(T.Integer({ minimum: 1, default: 1 })),
-        limit: T.Optional(T.Integer({ minimum: 1, maximum: 100, default: 20 }))
+        limit: T.Optional(T.Integer({ minimum: 1, maximum: 100, default: 20 })),
+        q: T.Optional(T.String()),
+        status: T.Optional(T.String())
       }),
       response: {
         200: {
@@ -148,88 +142,178 @@ export async function buildApp() {
         }
       }
     }
-  }, async (req, reply) => {
-    const { page = 1, limit = 20 } = req.query;
+  }, async (req) => {
+    const { page = 1, limit = 20, q, status } = req.query;
+    const now = new Date();
 
-    // Считаем пропуск для пагинации
-    const skip = (page - 1) * limit;
-
-    // Параллельный запрос: получить items и общее кол-во (total)
-    const [items, total] = await app.prisma.$transaction([
-      app.prisma.room.findMany({
-        skip,
-        take: limit,
-        orderBy: { code: 'asc' } // Сортируем по номеру (101, 102...)
-      }),
-      app.prisma.room.count()
-    ]);
-
-    // Возвращаем результат по нашей схеме
-    return {
-      items,
-      total,
-      page
-    };
-  })
-
-
-  // GET /api/users
-  app.get('/api/users', {
-    schema: {
-      operationId: 'listUsers',
-      tags: ['Users'],
-      summary: 'Get users',
-      response: {
-        200: {
-          description: 'List of users',
-          content: { 'application/json': { schema: T.Array(User) } }
-        },
-        500: {
-          description: 'Server Error',
-          content: { 'application/problem+json': { schema: ProblemDetails } }
+    const where: any = {};
+    if (q) {
+      where.OR = [
+        { name: { contains: q, mode: 'insensitive' } },
+        { code: { contains: q, mode: 'insensitive' } }
+      ];
+    }
+    const rawItems = await app.prisma.room.findMany({
+      where,
+      orderBy: { code: 'asc' },
+      include: {
+        bookings: {
+          where: {
+            start: { lte: now },
+            end: { gte: now }
+          }
         }
       }
+    });
+
+    let items = rawItems.map(room => {
+      let computedStatus = room.status;
+      if (room.bookings.length > 0 && room.status !== 'maintenance') {
+        computedStatus = 'reserved';
+      }
+      const { bookings, ...cleanRoom } = room;
+      return { ...cleanRoom, status: computedStatus };
+    });
+
+    if (status) {
+      items = items.filter(room => room.status === status);
     }
-  }, async (_req, _reply) => {
-    return app.prisma.user.findMany({ select: { id: true, email: true, name: true } })
+
+    const total = items.length;
+    const startIndex = (page - 1) * limit;
+    const endIndex = startIndex + limit;
+    const paginatedItems = items.slice(startIndex, endIndex);
+
+    return { items: paginatedItems, total, page };
   })
 
   // GET /api/health
-  app.get('/api/health', {
-    schema: {
-      operationId: 'health',
-      tags: ['System'],
-      summary: 'Health check',
-      response: {
-        200: {
-          description: 'Ready',
-          content: { 'application/json': { schema: Health } }
-        },
-        503: {
-          description: 'Unavailable',
-          content: { 'application/problem+json': { schema: ProblemDetails } }
-        }
-      }
-    }
-  }, async (_req, reply) => {
-    try {
-      await app.prisma.$queryRaw`SELECT 1`
-      return { ok: true } as Health
-    } catch {
-      reply.code(503).type('application/problem+json').send({
-        type: 'about:blank',
-        title: 'Service Unavailable',
-        status: 503,
-        detail: 'Database ping failed',
-        instance: '/api/health'
-      } satisfies ProblemDetails)
-    }
+  app.get('/api/health', async () => {
+    await app.prisma.$queryRaw`SELECT 1`
+    return { ok: true }
   })
 
-  app.get('/openapi.json', {
-    schema: { hide: true, tags: ['Internal'] }
-  }, async (_req, reply) => {
-    reply.type('application/json').send(app.swagger())
+  // GET /openapi.json
+  app.get('/openapi.json', { schema: { hide: true } }, async (req, reply) => {
+    reply.send(app.swagger())
+  })
+
+  app.get('/api/statistics', {
+    schema: {
+      tags: ['Stats'],
+      summary: 'Dashboard statistics',
+      response: { 200: StatisticsResponse }
+    }
+  }, async (req) => {
+    const now = new Date();
+
+    const totalRooms = await app.prisma.room.count();
+
+    const activeBookings = await app.prisma.booking.count({
+      where: {
+        AND: [
+          { start: { lte: now } },
+          { end: { gte: now } }
+        ]
+      }
+    });
+
+    const allEquipment = await app.prisma.room.findMany({
+      select: { equipment: true }
+    });
+    const totalEquipment = allEquipment.reduce((acc, r) => acc + r.equipment.length, 0);
+
+    return {
+      totalRooms,
+      activeBookings,
+      availableRooms: totalRooms - activeBookings,
+      totalEquipment
+    };
+  })
+
+  app.get('/api/bookings', {
+    schema: {
+      tags: ['Bookings'],
+      response: { 200: T.Array(Booking) }
+    }
+  }, async () => {
+    return app.prisma.booking.findMany({
+      orderBy: { start: 'desc' },
+      include: {
+        room: { select: { code: true, name: true } }
+      }
+    })
+  })
+
+
+  app.post('/api/bookings', {
+    schema: {
+      tags: ['Bookings'],
+      body: CreateBookingRequest,
+      response: {
+        201: Booking,
+        409: ProblemDetails
+      }
+    }
+  }, async (req, reply) => {
+    const { title, start, end, roomId } = req.body;
+    const startDate = new Date(start);
+    const endDate = new Date(end);
+
+    if (startDate >= endDate) {
+      throw new ValidationProblem('Начало должно быть раньше конца', [], 'body');
+    }
+
+    const conflicts = await app.prisma.booking.count({
+      where: {
+        roomId: roomId,
+        AND: [
+          { start: { lt: endDate } },
+          { end: { gt: startDate } }
+        ]
+      }
+    });
+
+    if (conflicts > 0) {
+      return reply.code(409).send({
+        type: 'about:blank',
+        title: 'Conflict',
+        status: 409,
+        detail: 'Выбранное время пересекается с существующим бронированием',
+        instance: req.url
+      });
+    }
+
+    const newBooking = await app.prisma.booking.create({
+      data: {
+        title,
+        start: startDate,
+        end: endDate,
+        roomId
+      },
+      include: {
+        room: { select: { code: true, name: true } }
+      }
+    });
+
+    return reply.code(201).send(newBooking);
+  })
+
+  app.delete('/api/bookings/:id', {
+    schema: {
+      tags: ['Bookings'],
+      params: T.Object({ id: T.String() }),
+      response: { 204: T.Null() }
+    }
+  }, async (req, reply) => {
+    const { id } = req.params;
+
+    try {
+      await app.prisma.booking.delete({ where: { id } });
+    } catch (e) {
+    }
+
+    return reply.code(204).send();
   })
 
   return app

@@ -18,9 +18,15 @@ export interface RoomsResponseDto {
   total: number;
 }
 
-export async function fetchRooms(page = 1): Promise<RoomsResponseDto> {
-  const { data } = await http.get<RoomsResponseDto>("/rooms", {
-    params: { page },
-  });
+export interface RoomFilters {
+  page?: number;
+  limit?: number;
+  q?: string;
+  status?: string;
+}
+
+export async function fetchRooms(params: RoomFilters = {}): Promise<RoomsResponseDto> {
+  // params: { page: 1, q: '101', status: 'available' }
+  const { data } = await http.get<RoomsResponseDto>("/rooms", { params });
   return data;
 }

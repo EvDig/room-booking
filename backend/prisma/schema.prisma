@@ -23,15 +23,28 @@ enum RoomStatus {
 
 model Room {
   id        String     @id @default(uuid())
-  code      String     @unique              
-  name      String                          
-  capacity  Int                             
-  equipment String[]                        
-  
+  code      String     @unique 
+  name      String
+  capacity  Int
+  equipment String[]
   status    RoomStatus @default(available)
-  
-  note      String?                         
+  note      String?
 
   createdAt DateTime   @default(now())
   updatedAt DateTime   @updatedAt
+
+  bookings  Booking[]
+}
+
+model Booking {
+  id        String   @id @default(uuid())
+  title     String
+  
+  start     DateTime
+  end       DateTime
+  
+  roomId    String
+  room      Room     @relation(fields: [roomId], references: [id])
+
+  createdAt DateTime @default(now())
 }

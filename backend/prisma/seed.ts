@@ -27,7 +27,7 @@ async function main() {
       name: 'Компьютерный класс',
       capacity: 30,
       equipment: ['computers', 'projector', 'whiteboard', 'wifi'],
-      status: 'reserved' as const,
+      status: 'available' as const,
     },
     {
       code: '201',
@@ -41,7 +41,7 @@ async function main() {
       name: 'Семинарская',
       capacity: 25,
       equipment: ['whiteboard', 'wifi'],
-      status: 'maintenance' as const,
+      status: 'available' as const,
     },
   ]
 

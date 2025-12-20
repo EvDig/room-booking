@@ -21,3 +21,5 @@ backend/src/generated/prisma/
 
 db_data/
 prisma/migrations/migration_lock.toml
+
+scan_structure.py
