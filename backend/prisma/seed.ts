@@ -5,6 +5,14 @@ const prisma = new PrismaClient()
 async function main() {
   console.log('Start seeding...')
 
+  try {
+    await prisma.booking.deleteMany()
+    await prisma.room.deleteMany()
+    console.log('Old data deleted.')
+  } catch (e) {
+    console.log('Database was empty or reset not required.')
+  }
+
   await prisma.user.upsert({
     where: { email: 'admin@example.com' },
     update: {},
@@ -48,10 +56,15 @@ async function main() {
   for (const room of roomsData) {
     const r = await prisma.room.upsert({
       where: { code: room.code },
-      update: {},
+      update: {
+        status: room.status,
+        equipment: room.equipment,
+        capacity: room.capacity,
+        name: room.name
+      },
       create: room,
     })
-    console.log(`Created room with id: ${r.id}`)
+    console.log(`Created/Updated room with id: ${r.id}`)
   }
 
   console.log('Seeding finished.')
