@@ -237,12 +237,18 @@ export async function buildApp() {
       response: { 200: T.Array(Booking) }
     }
   }, async () => {
-    return app.prisma.booking.findMany({
+    const bookings = await app.prisma.booking.findMany({
       orderBy: { start: 'desc' },
       include: {
         room: { select: { code: true, name: true } }
       }
-    })
+    });
+
+    return bookings.map(b => ({
+      ...b,
+      start: b.start.toISOString(),
+      end: b.end.toISOString()
+    }))
   })
 
 
